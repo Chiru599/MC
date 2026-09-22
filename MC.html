@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<title>Block Battle — PvP Arena</title>
+<link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@400;600;700&family=Silkscreen:wght@400;700&display=swap" rel="stylesheet">
+<style>
+:root{--steel:#7f93a8;--slate:#121a24;--amber:#f2a53c;--energy:#35e0d4;--danger:#e2483d;--bone:#e8eef5;--safe:#4adc6f;--ui:"Chakra Petch",system-ui,sans-serif;--num:"Silkscreen",monospace;}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;overflow:hidden;background:var(--slate);color:var(--bone);font-family:var(--ui)}
+canvas{display:block;width:100%;height:100%;touch-action:none}
+#wrap{position:fixed;inset:0}
+#vignette{position:fixed;inset:0;pointer-events:none;background:radial-gradient(ellipse at 50% 50%,rgba(0,0,0,0) 45%,rgba(0,0,0,.55) 100%);}
+#hurt{position:fixed;inset:0;pointer-events:none;opacity:0;background:radial-gradient(ellipse at 50% 50%,rgba(226,72,61,0) 35%,rgba(226,72,61,.85) 100%);transition:opacity .18s}
+#heal{position:fixed;inset:0;pointer-events:none;opacity:0;background:radial-gradient(ellipse at 50% 50%,rgba(53,224,212,0) 40%,rgba(53,224,212,.45) 100%);transition:opacity .35s}
+#zonehurt{position:fixed;inset:0;pointer-events:none;opacity:0;background:radial-gradient(ellipse at 50%  110%,rgba(226,72,61,0) 20%,rgba(180,20,10,.7) 100%);transition:opacity .3s}
+#cross{position:fixed;left:50%;top:50%;width:26px;height:26px;transform:translate(-50%,-50%);pointer-events:none}
+#cross i{position:absolute;background:rgba(232,238,245,.9);box-shadow:0 0 3px rgba(0,0,0,.8)}
+#cross i:nth-child(1){left:11px;top:0;width:2px;height:8px}
+#cross i:nth-child(2){left:11px;bottom:0;width:2px;height:8px}
+#cross i:nth-child(3){top:12px;left:0;width:8px;height:2px}
+#cross i:nth-child(4){top:12px;right:0;width:8px;height:2px}
+#cross.enemy i{background:var(--danger)}
+#hitmark{position:fixed;left:50%;top:50%;width:34px;height:34px;transform:translate(-50%,-50%) rotate(45deg);pointer-events:none;opacity:0}
+#hitmark:before,#hitmark:after{content:"";position:absolute;background:var(--amber)}
+#hitmark:before{left:16px;top:0;width:3px;height:34px}
+#hitmark:after{top:16px;left:0;width:34px;height:3px}
+#mine{position:fixed;left:50%;top:calc(50% + 34px);transform:translateX(-50%);width:76px;height:5px;background:rgba(0,0,0,.55);border:1px solid rgba(232,238,245,.35);opacity:0;pointer-events:none}
+#mineFill{height:100%;width:0%;background:var(--amber)}
+
+/* ===== TOP HUD ===== */
+#top{position:fixed;top:0;left:0;right:0;padding:14px 18px;display:flex;justify-content:space-between;align-items:flex-start;pointer-events:none;gap:16px}
+.plate{background:linear-gradient(180deg,rgba(27,39,53,.92),rgba(12,18,26,.92));border:1px solid rgba(127,147,168,.35);border-left:3px solid var(--amber);padding:7px 13px 8px}
+.plate .k{font-size:11px;letter-spacing:.14em;color:var(--steel)}
+.plate .v{font-family:var(--num);font-size:19px;line-height:1.15;color:var(--bone)}
+#waveplate{border-left-color:var(--danger)}
+#scoreplate{border-left-color:var(--energy)}
+
+/* ===== BATTLE PHASE BANNER (center top) ===== */
+#battlePhaseBar{position:fixed;top:0;left:50%;transform:translateX(-50%);pointer-events:none;display:none;flex-direction:column;align-items:center;z-index:10}
+#battlePhaseBar.show{display:flex}
+#phaseLabel{font-size:11px;letter-spacing:.22em;color:var(--steel);margin-top:10px}
+#phaseTimerBox{background:linear-gradient(180deg,rgba(27,39,53,.95),rgba(7,12,18,.95));border:1px solid rgba(127,147,168,.4);border-bottom:3px solid var(--amber);padding:6px 28px 8px;text-align:center}
+#phaseTimerBox.attack{border-bottom-color:var(--danger)}
+#phaseTimerBox.prepare{border-bottom-color:var(--safe)}
+#phaseTimerVal{font-family:var(--num);font-size:26px;color:var(--bone)}
+#zoneWarn{position:fixed;top:64px;left:50%;transform:translateX(-50%);font-size:13px;letter-spacing:.18em;color:var(--danger);font-weight:700;pointer-events:none;opacity:0;text-shadow:0 0 12px rgba(226,72,61,.8);transition:opacity .3s}
+
+/* ===== MINIMAP ===== */
+#minimapWrap{position:fixed;top:14px;left:14px;z-index:15;pointer-events:none}
+#minimapCanvas{display:block;border-radius:4px;border:2px solid rgba(127,147,168,.55);box-shadow:0 4px 18px rgba(0,0,0,.7),0 0 0 1px rgba(0,0,0,.4);image-rendering:pixelated}
+#minimapLabel{font-size:9px;letter-spacing:.14em;color:var(--steel);text-align:center;margin-top:4px}
+#minimapMode{font-size:9px;letter-spacing:.1em;color:var(--amber);text-align:center}
+
+/* ===== BOTTOM HUD ===== */
+#bottom{position:fixed;left:0;right:0;bottom:0;padding:0 16px 16px;display:flex;flex-direction:column;align-items:center;gap:10px;pointer-events:none}
+#vitals{width:min(560px,92vw);display:flex;align-items:center;gap:10px}
+#hpouter{flex:1;height:18px;background:rgba(9,14,20,.9);border:1px solid rgba(127,147,168,.45);position:relative;overflow:hidden}
+#hpfill{height:100%;width:100%;background:linear-gradient(180deg,#ff6a5e,#c02c22);transition:width .16s linear}
+#hpghost{position:absolute;top:0;left:0;height:100%;background:rgba(255,255,255,.3);transition:width .5s ease-out .15s}
+#hpnum{font-family:var(--num);font-size:16px;width:70px;text-align:right}
+#armorTag{font-size:11px;letter-spacing:.12em;color:var(--steel)}
+#hotbar{display:flex;gap:6px;pointer-events:auto}
+.slot{width:54px;height:60px;background:rgba(9,14,20,.86);border:2px solid rgba(127,147,168,.4);position:relative;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;padding-top:4px;cursor:pointer;transition:transform .08s,border-color .08s}
+.slot.on{border-color:var(--amber);transform:translateY(-6px);box-shadow:0 0 0 1px rgba(242,165,60,.35),0 8px 18px rgba(0,0,0,.5)}
+.slot canvas{width:34px;height:34px;image-rendering:pixelated}
+.slot .ct{font-family:var(--num);font-size:12px;margin-top:2px;color:var(--bone)}
+.slot.empty{opacity:.4}
+.slot .kb{position:absolute;top:2px;left:4px;font-family:var(--num);font-size:9px;color:var(--steel)}
+
+/* ===== BANNER ===== */
+#banner{position:fixed;left:0;right:0;top:24%;text-align:center;pointer-events:none;opacity:0}
+#banner .b1{font-size:clamp(34px,8vw,74px);font-weight:700;letter-spacing:.04em;line-height:.95;text-shadow:0 6px 0 rgba(0,0,0,.45)}
+#banner .b2{font-size:14px;letter-spacing:.3em;color:var(--steel);margin-top:8px}
+@keyframes bannerIn{0%{opacity:0;transform:translateY(16px) scale(.96)}14%{opacity:1;transform:none}80%{opacity:1}100%{opacity:0;transform:translateY(-10px)}}
+.dmg{position:fixed;font-family:var(--num);font-size:19px;pointer-events:none;text-shadow:0 2px 0 rgba(0,0,0,.75);animation:dmgUp .85s ease-out forwards}
+@keyframes dmgUp{0%{opacity:0;transform:translate(-50%,0) scale(.7)}18%{opacity:1;transform:translate(-50%,-14px) scale(1.12)}100%{opacity:0;transform:translate(-50%,-56px) scale(.95)}}
+
+/* ===== SCREENS ===== */
+.screen{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;padding:24px;background:radial-gradient(ellipse at 50% 30%,rgba(30,46,64,.96),rgba(7,11,16,.98));z-index:20}
+.screen.hide{display:none}
+.panel{width:min(820px,100%);max-height:100%;overflow:auto}
+.title{font-size:clamp(46px,11vw,104px);font-weight:700;line-height:.86;letter-spacing:-.01em}
+.title span{display:block}
+.title .t2{color:var(--amber)}
+.tagline{margin-top:14px;font-size:16px;color:#c3d0dd;max-width:54ch;line-height:1.5}
+.rule{height:3px;width:74px;background:var(--amber);margin:22px 0}
+.keys{display:grid;grid-template-columns:repeat(auto-fit,minmax(196px,1fr));gap:2px 26px;margin-bottom:20px}
+.key{display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid rgba(127,147,168,.18);font-size:14px}
+.key b{font-family:var(--num);font-size:11px;background:#25323f;border:1px solid rgba(127,147,168,.45);padding:5px 7px;min-width:52px;text-align:center;font-weight:400;color:var(--bone)}
+.key i{font-style:normal;color:#b6c4d2}
+.cta{font-family:var(--ui);font-size:20px;font-weight:700;letter-spacing:.06em;color:#10161d;background:var(--amber);border:0;padding:16px 42px;cursor:pointer;transition:transform .1s,background .1s}
+.cta:hover{background:#ffbb58;transform:translateY(-2px)}
+.sub{margin-top:14px;font-size:13px;color:var(--steel)}
+.statrow{display:flex;gap:34px;margin:18px 0 26px;flex-wrap:wrap}
+.stat .sv{font-family:var(--num);font-size:34px;color:var(--amber)}
+.stat .sk{font-size:12px;letter-spacing:.16em;color:var(--steel)}
+#deadscreen .title{color:var(--danger)}
+#deadscreen .rule{background:var(--danger)}
+
+/* ===== MODE SELECT ===== */
+#modeRow{display:flex;gap:14px;flex-wrap:wrap;margin-bottom:22px}
+.modeBtn{flex:1;min-width:180px;background:rgba(9,14,20,.7);border:2px solid rgba(127,147,168,.35);padding:18px 14px;cursor:pointer;text-align:left;transition:border-color .15s,background .15s;font-family:var(--ui)}
+.modeBtn:hover{border-color:var(--amber);background:rgba(27,39,53,.9)}
+.modeBtn.selected{border-color:var(--amber);background:rgba(27,39,53,.95);box-shadow:0 0 0 1px rgba(242,165,60,.35)}
+.modeBtn .mt{font-size:15px;font-weight:700;letter-spacing:.08em;color:var(--bone);margin-bottom:5px}
+.modeBtn .md{font-size:12px;color:var(--steel);line-height:1.4}
+.modeBtn .mi{font-size:22px;margin-bottom:8px}
+.modeBtn.pvp .mt{color:var(--danger)}
+.modeBtn.party .mt{color:var(--energy)}
+.modeBtn.wave .mt{color:var(--amber)}
+.battleTip{font-size:12px;color:var(--steel);margin-bottom:14px;line-height:1.5;padding:10px 14px;background:rgba(226,72,61,.08);border-left:3px solid var(--danger);display:none}
+.battleTip.show{display:block}
+#partyConfig{display:none;background:rgba(9,14,20,.7);border:2px solid rgba(127,147,168,.35);padding:14px;margin-bottom:20px;font-family:var(--ui);}
+#partyConfig.show{display:block;}
+.pRow{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;}
+.pRow:last-child{margin-bottom:0;}
+.pLabel{font-size:14px;color:var(--bone);font-weight:700;letter-spacing:0.06em;}
+.pControls{display:flex;gap:10px;align-items:center;}
+.pBtn{background:var(--amber);border:none;width:30px;height:30px;font-size:18px;font-weight:bold;cursor:pointer;color:#10161d;display:flex;align-items:center;justify-content:center;}
+.pBtn:hover{background:#ffbb58;}
+.pVal{font-family:var(--num);font-size:22px;color:var(--bone);width:30px;text-align:center;}
+
+/* ===== TOUCH ===== */
+#touch{position:fixed;inset:0;pointer-events:none;display:none}
+#touch.on{display:block}
+#stick{position:absolute;left:22px;bottom:118px;width:132px;height:132px;border-radius:50%;border:2px solid rgba(127,147,168,.4);background:rgba(9,14,20,.35);pointer-events:auto}
+#knob{position:absolute;left:41px;top:41px;width:50px;height:50px;border-radius:50%;background:rgba(232,238,245,.55)}
+.tbtn{position:absolute;pointer-events:auto;border-radius:50%;background:rgba(9,14,20,.6);border:2px solid rgba(127,147,168,.45);display:flex;align-items:center;justify-content:center;font-size:11px;letter-spacing:.06em;color:var(--bone);font-weight:700}
+.tbtn:active{background:rgba(242,165,60,.45)}
+#bJump{right:150px;bottom:196px;width:74px;height:74px}
+#bMine{right:22px;bottom:196px;width:82px;height:82px}
+#bPlace{right:118px;bottom:112px;width:74px;height:74px}
+#bThrow{right:26px;bottom:104px;width:74px;height:74px}
+
+/* ===== CRAFTING SCREEN ===== */
+#craftScreen{position:fixed;inset:0;z-index:30;display:none;align-items:center;justify-content:center;background:rgba(7,12,18,.9);backdrop-filter:blur(4px)}
+#craftScreen.open{display:flex}
+#craftBox{background:linear-gradient(160deg,#1b2735,#0d1520);border:2px solid rgba(127,147,168,.4);padding:28px 32px;min-width:min(560px,96vw);max-height:90vh;overflow-y:auto;border-radius:4px;box-shadow:0 24px 60px rgba(0,0,0,.7)}
+#craftBox h2{font-size:22px;letter-spacing:.12em;color:var(--amber);margin-bottom:18px;text-align:center}
+#craftRow{display:flex;align-items:center;gap:16px;justify-content:center;flex-wrap:wrap}
+#craftGrid{display:grid;grid-template-columns:repeat(3,56px);gap:5px}
+.cslot{width:56px;height:56px;background:rgba(9,14,20,.9);border:2px solid rgba(127,147,168,.3);display:flex;align-items:center;justify-content:center;cursor:pointer;position:relative}
+.cslot:hover{border-color:var(--amber)}
+.cslot canvas{width:38px;height:38px;image-rendering:pixelated}
+.cct{position:absolute;bottom:2px;right:3px;font-size:10px;color:var(--amber);font-family:var(--num)}
+#craftArrow{font-size:32px;color:var(--amber);display:flex;align-items:center}
+#craftOut{display:flex;flex-direction:column;align-items:center;gap:8px}
+#craftOutSlot{width:68px;height:68px;background:rgba(9,14,20,.9);border:2px solid rgba(53,224,212,.4);display:flex;align-items:center;justify-content:center;cursor:pointer;position:relative}
+#craftOutSlot canvas{width:46px;height:46px;image-rendering:pixelated}
+#craftOutName{font-size:11px;letter-spacing:.1em;color:var(--steel);text-align:center;max-width:80px}
+#craftRecipes{margin-top:16px;border-top:1px solid rgba(127,147,168,.2);padding-top:12px}
+#craftRecipes h3,.invH{font-size:11px;letter-spacing:.14em;color:var(--steel);margin-bottom:8px}
+#recipeList{display:flex;flex-wrap:wrap;gap:5px}
+.rchip{font-size:11px;background:rgba(127,147,168,.14);border:1px solid rgba(127,147,168,.3);padding:4px 9px;cursor:pointer;color:var(--bone)}
+.rchip:hover{background:rgba(242,165,60,.2);border-color:var(--amber);color:var(--amber)}
+#craftInvDisplay{margin-top:14px;border-top:1px solid rgba(127,147,168,.2);padding-top:10px}
+#craftInvSlots{display:flex;flex-wrap:wrap;gap:4px}
+.ismslot{width:46px;height:46px;background:rgba(9,14,20,.9);border:2px solid rgba(127,147,168,.25);display:flex;align-items:center;justify-content:center;cursor:pointer;position:relative}
+.ismslot:hover{border-color:var(--amber)}
+.ismslot canvas{width:30px;height:30px;image-rendering:pixelated}
+#craftClose{margin-top:14px;display:block;width:100%;background:rgba(226,72,61,.15);border:1px solid var(--danger);color:var(--danger);padding:9px;cursor:pointer;font-family:var(--ui);font-size:13px;letter-spacing:.08em}
+#craftClose:hover{background:rgba(226,72,61,.35)}
+</style>
+</head>
+<body>
+<div id="wrap"><canvas id="c"></canvas></div>
+<div id="vignette"></div><div id="hurt"></div><div id="heal"></div><div id="zonehurt"></div>
+<div id="cross"><i></i><i></i><i></i><i></i></div>
+<div id="hitmark"></div>
+<div id="mine"><div id="mineFill"></div></div>
+
+<!-- MINIMAP -->
+<div id="minimapWrap">
+  <canvas id="minimapCanvas" width="140" height="140"></canvas>
+  <div id="minimapLabel">BATTLE MAP</div>
+  <div id="minimapMode"></div>
+</div>
+
+<!-- TOP HUD -->
+<div id="top">
+  <div class="plate" id="waveplate"><div class="k">WAVE</div><div class="v" id="waveVal">1</div></div>
+  <div id="battlePhaseBar">
+    <div id="phaseTimerBox" class="prepare">
+      <div id="phaseTimerVal">5:00</div>
+    </div>
+    <div id="phaseLabel">PREPARE PHASE</div>
+  </div>
+  <div class="plate" id="timerplate" style="text-align:center"><div class="k" id="timerKey">BUILD TIME</div><div class="v" id="timerVal">20</div></div>
+  <div class="plate" id="scoreplate" style="text-align:right"><div class="k">SCORE</div><div class="v" id="scoreVal">0</div></div>
+</div>
+
+<!-- ZONE WARNING -->
+<div id="zoneWarn">⚠ DANGER ZONE — 2 HP/SEC</div>
+
+<!-- BOTTOM HUD -->
+<div id="bottom">
+  <div id="vitals">
+    <div id="armorTag">HP</div>
+    <div id="hpouter"><div id="hpghost"></div><div id="hpfill"></div></div>
+    <div id="hpnum">200/200</div>
+  </div>
+  <div id="hotbar"></div>
+</div>
+
+<div id="banner"><div class="b1" id="bannerA">WAVE 1</div><div class="b2" id="bannerB">THEY ARE COMING</div></div>
+
+<!-- TOUCH CONTROLS -->
+<div id="touch">
+  <div id="stick"><div id="knob"></div></div>
+  <div class="tbtn" id="bJump">JUMP</div>
+  <div class="tbtn" id="bMine">MINE<br>HIT</div>
+  <div class="tbtn" id="bPlace">PLACE</div>
+  <div class="tbtn" id="bThrow">THROW</div>
+</div>
+
+<!-- CRAFTING SCREEN -->
+<div id="craftScreen">
+  <div id="craftBox">
+    <h2>&#9874; CRAFTING TABLE</h2>
+    <div id="craftRow">
+      <div id="craftGrid"></div>
+      <div id="craftArrow">&#10132;</div>
+      <div id="craftOut">
+        <div id="craftOutSlot"><span style="color:#4a5a6a;font-size:13px">?</span></div>
+        <div id="craftOutName">&#8212;</div>
+      </div>
+    </div>
+    <div id="craftRecipes"><h3>QUICK RECIPES</h3><div id="recipeList"></div></div>
+    <div id="craftInvDisplay"><p class="invH">YOUR INVENTORY</p><div id="craftInvSlots"></div></div>
+    <button id="craftClose">&#10005; CLOSE (E)</button>
+  </div>
+</div>
+
+<!-- START SCREEN -->
+<div class="screen" id="startscreen">
+  <div class="panel">
+    <h1 class="title"><span>BLOCK</span><span class="t2">BATTLE</span></h1>
+    <p class="tagline">Mine, craft, build — survive hordes of zombies &amp; skeletons. Tame wild dogs 🐕, slay the 🐉 Dragon boss, and fight rivals in the PvP arena.</p>
+    <div class="rule"></div>
+
+    <div id="modeRow">
+      <div class="modeBtn wave selected" id="modeWave" onclick="selectMode('wave')">
+        <div class="mi">🧟</div>
+        <div class="mt">WAVE SURVIVAL</div>
+        <div class="md">Classic mode. Survive zombie &amp; skeleton waves. Tame dogs, slay the Dragon boss.</div>
+      </div>
+      <div class="modeBtn pvp" id="modePvP" onclick="selectMode('pvp')">
+        <div class="mi">⚔️</div>
+        <div class="mt">1v1 BATTLE</div>
+        <div class="md">5 min prepare · 2 min attack · 5×5km arena · 200 HP. Defeat the rival player.</div>
+      </div>
+      <div class="modeBtn party" id="modeParty" onclick="selectMode('party')">
+        <div class="mi">🛡️</div>
+        <div class="mt">PARTY vs PARTY</div>
+        <div class="md">3v3 team battle. Coordinate with allies to eliminate the enemy team.</div>
+      </div>
+    </div>
+
+    <div id="partyConfig">
+      <div class="pRow">
+        <div class="pLabel">ALLY TEAM SIZE (You + Bots)</div>
+        <div class="pControls">
+          <button class="pBtn" onclick="adjTeam('ally', -1)">-</button>
+          <div class="pVal" id="allyTeamSize">3</div>
+          <button class="pBtn" onclick="adjTeam('ally', 1)">+</button>
+        </div>
+      </div>
+      <div class="pRow">
+        <div class="pLabel">ENEMY TEAM SIZE</div>
+        <div class="pControls">
+          <button class="pBtn" onclick="adjTeam('enemy', -1)">-</button>
+          <div class="pVal" id="enemyTeamSize">3</div>
+          <button class="pBtn" onclick="adjTeam('enemy', 1)">+</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="battleTip" id="battleTip">
+      ⚠️ <strong>BATTLE MODE:</strong> 5 min prepare, 2 min attack. Zone shrinks — outside = 2 HP/sec. Water &amp; ruins = 1 HP/sec. HP: 200.<br>
+      🐕 <strong>Dogs:</strong> Right-click wild dogs while holding Meat to tame. Tamed dogs follow &amp; fight for you!<br>
+      🐉 <strong>Dragon:</strong> Spawns in the Danger Zone. Slay it for Dragon Scales! The gun deals 60+ damage per shot.
+    </div>
+
+    <div class="keys">
+      <div class="key"><b>W A S D</b><i>Move</i></div>
+      <div class="key"><b>MOUSE</b><i>Look</i></div>
+      <div class="key"><b>SPACE</b><i>Jump</i></div>
+      <div class="key"><b>SHIFT</b><i>Sprint</i></div>
+      <div class="key"><b>LEFT</b><i>Mine / attack mobs</i></div>
+      <div class="key"><b>RIGHT</b><i>Place / Tame dog</i></div>
+      <div class="key"><b>E</b><i>Open crafting</i></div>
+      <div class="key"><b>F</b><i>Throw block</i></div>
+      <div class="key"><b>1–9</b><i>Pick slot</i></div>
+      <div class="key"><b>G</b><i>Fire gun</i></div>
+    </div>
+    <button class="cta" id="playBtn">Enter the Arena</button>
+    <p class="sub">🐕 Right-click wild dogs with Meat to tame | 🐉 Dragon spawns in Danger Zone every few minutes | 🔫 Craft Gun: Iron×3 + Gunpowder×2</p>
+  </div>
+</div>
+
+<!-- PAUSE SCREEN -->
+<div class="screen hide" id="pausescreen">
+  <div class="panel">
+    <h1 class="title" style="font-size:clamp(34px,7vw,64px)"><span>PAUSED</span></h1>
+    <div class="rule"></div>
+    <button class="cta" id="resumeBtn">Back to the fight</button>
+    <p class="sub">Your fort is still standing. So are they.</p>
+  </div>
+</div>
+
+<!-- DEATH SCREEN -->
+<div class="screen hide" id="deadscreen">
+  <div class="panel">
+    <h1 class="title"><span>THEY GOT</span><span>THROUGH</span></h1>
+    <div class="rule"></div>
+    <div class="statrow">
+      <div class="stat"><div class="sv" id="dWave">1</div><div class="sk">WAVES HELD</div></div>
+      <div class="stat"><div class="sv" id="dKills">0</div><div class="sk">KILLS</div></div>
+      <div class="stat"><div class="sv" id="dScore">0</div><div class="sk">SCORE</div></div>
+      <div class="stat"><div class="sv" id="dBlocks">0</div><div class="sk">BLOCKS PLACED</div></div>
+    </div>
+    <button class="cta" id="retryBtn">Build it again</button>
+    <p class="sub">Tip: 🐕 Right-click wild dogs (hold Meat) to tame a companion. 🐉 Dragon = 800 HP but drops Dragon Scales. 🔫 Gun = Iron×3 + Gunpowder×2.</p>
+  </div>
+</div>
+
+<script>
+var selectedGameMode = 'wave';
+var pvpAllySize = 3;
+var pvpEnemySize = 3;
+function adjTeam(type, dir) {
+  if(type === 'ally') {
+    pvpAllySize = Math.max(2, Math.min(5, pvpAllySize + dir));
+    document.getElementById('allyTeamSize').textContent = pvpAllySize;
+  } else {
+    pvpEnemySize = Math.max(2, Math.min(5, pvpEnemySize + dir));
+    document.getElementById('enemyTeamSize').textContent = pvpEnemySize;
+  }
+}
+function selectMode(mode) {
+  selectedGameMode = mode;
+  document.querySelectorAll('.modeBtn').forEach(b => b.classList.remove('selected'));
+  var id = mode === 'wave' ? 'modeWave' : mode === 'pvp' ? 'modePvP' : 'modeParty';
+  document.getElementById(id).classList.add('selected');
+  var tip = document.getElementById('battleTip');
+  if (mode !== 'wave') { tip.classList.add('show'); } else { tip.classList.remove('show'); }
+  var pc = document.getElementById('partyConfig');
+  if(pc) {
+    if (mode === 'party') { pc.classList.add('show'); } else { pc.classList.remove('show'); }
+  }
+}
+</script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
+<script>if(!window.THREE){document.write('<scr'+'ipt src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"><\/scr'+'ipt>');}</script>
+<script src="mc_game.js"></script>
+</body>
+</html>
