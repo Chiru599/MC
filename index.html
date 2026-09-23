@@ -196,7 +196,7 @@ canvas{display:block;width:100%;height:100%;touch-action:none}
 </div>
 
 <!-- ZONE WARNING -->
-<div id="zoneWarn">⚠ DANGER ZONE — 2 HP/SEC</div>
+<div id="zoneWarn">⚠ DANGER ZONE — 1 HP/SEC | 💧 WATER — 1 HP/SEC</div>
 
 <!-- BOTTOM HUD -->
 <div id="bottom">
@@ -286,7 +286,8 @@ canvas{display:block;width:100%;height:100%;touch-action:none}
     </div>
 
     <div class="battleTip" id="battleTip">
-      ⚠️ <strong>BATTLE MODE:</strong> 5 min prepare, 2 min attack. Zone shrinks — outside = 2 HP/sec. Water &amp; ruins = 1 HP/sec. HP: 200.<br>
+      ⚠️ <strong>BATTLE MODE:</strong> 5 min prepare, 2 min attack. Zone shrinks — outside inner zone = 1 HP/sec. Outside outer zone = +1 HP/sec. Water = 1 HP/sec (always). HP: 200.<br>
+      🌍 <strong>World Zones:</strong> Inner safe zone (5×5km) → Transparent separator ring → Outer danger zone (20×20km) with ruins &amp; dungeons. Zone rings visible on minimap!<br>
       🐕 <strong>Dogs:</strong> Right-click wild dogs while holding Meat to tame. Tamed dogs follow &amp; fight for you!<br>
       🐉 <strong>Dragon:</strong> Spawns in the Danger Zone. Slay it for Dragon Scales! The gun deals 60+ damage per shot.
     </div>
@@ -362,6 +363,6 @@ function selectMode(mode) {
 </script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
 <script>if(!window.THREE){document.write('<scr'+'ipt src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"><\/scr'+'ipt>');}</script>
-<script src="mc_game.js"></script>
+<script src="script.js"></script>
 </body>
 </html>

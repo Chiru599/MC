@@ -8,8 +8,16 @@ if(!window.THREE){
 
 /* ============================================
    WORLD CONSTANTS
+   — Zone layout:
+     INNER_ZONE_R  = 25 blocks  (inner 5×5km safe zone)
+     SEPARATOR_R   = 30 blocks  (transparent separator wall)
+     OUTER_ZONE_R  = 75 blocks  (outer 20km danger zone boundary)
    ============================================ */
-const WX=80,WY=48,WZ=80,CS=16;
+const WX=160,WY=48,WZ=160,CS=16;
+const INNER_ZONE_R=25;   // inner safe zone radius
+const SEPARATOR_R=30;    // separator ring radius (walkthrough)
+const OUTER_ZONE_R=75;   // outer danger zone boundary
+const ARENA_R=INNER_ZONE_R; // kept for compatibility
 const CXN=WX/CS,CZN=WZ/CS;
 const TILE=64,ACOL=8,AROW=8;
 
@@ -209,7 +217,10 @@ function genWorld(){
   world.fill(0);damage.clear();placed.clear();ruinZones.length=0;
   for(let x=0;x<WX;x++)for(let z=0;z<WZ;z++){
     const h=tH(x,z);const beach=h<=7;
-    for(let y=0;y<=h;y++){let b=3;if(y===0)b=9;else if(y===h)b=beach?6:1;else if(y>h-4)b=beach?6:2;world[VI(x,y,z)]=b;}
+    const dist=Math.hypot(x-CXc,z-CZc);
+    const outZone=dist>INNER_ZONE_R;
+    const farZone=dist>SEPARATOR_R;
+    for(let y=0;y<=h;y++){let b=3;if(y===0)b=9;else if(y===h)b=outZone?6:(beach?6:1);else if(y>h-4)b=outZone?6:(beach?6:2);world[VI(x,y,z)]=b;}
     if(h<7)for(let y=h+1;y<=7;y++)world[VI(x,y,z)]=10;
   }
   for(let x=0;x<WX;x++)for(let z=0;z<WZ;z++){if(x<2||x>WX-3||z<2||z>WZ-3){const h=tH(x,z);for(let y=0;y<=h+6;y++)world[VI(x,y,z)]=9;}}
@@ -218,14 +229,63 @@ function genWorld(){
   for(let k=0;k<55;k++){const x=4+((rnd()*(WX-8))|0),z=4+((rnd()*(WZ-8))|0);const y=2+((rnd()*6)|0);if(inb(x,y,z)&&world[VI(x,y,z)]===3)world[VI(x,y,z)]=21;}
   for(let i=0;i<90;i++){const x=5+((rnd()*(WX-10))|0),z=5+((rnd()*(WZ-10))|0);if(Math.hypot(x-CXc,z-CZc)<16)continue;const h=tH(x,z);if(getV(x,h,z)!==1)continue;const th=4+((rnd()*3)|0);for(let y=1;y<=th;y++)world[VI(x,h+y,z)]=4;for(let dx=-2;dx<=2;dx++)for(let dz=-2;dz<=2;dz++)for(let dy=-1;dy<=2;dy++){const r=Math.abs(dx)+Math.abs(dz)+Math.abs(dy);if(r>3||(dx===0&&dz===0&&dy<=0))continue;const X=x+dx,Y=h+th+dy,Z=z+dz;if(inb(X,Y,Z)&&world[VI(X,Y,Z)]===AIR)world[VI(X,Y,Z)]=5;}}
   for(let i=0;i<32;i++){const x=6+((rnd()*(WX-12))|0),z=6+((rnd()*(WZ-12))|0);if(Math.hypot(x-CXc,z-CZc)<10)continue;const h=tH(x,z);world[VI(x,h,z)]=rnd()<0.25?8:7;}
-  for(let ri=0;ri<8;ri++){const ang=ri*(Math.PI*2/8)+(rnd()-0.5)*0.5;const dist=18+rnd()*14;const rx=Math.round(CXc+Math.cos(ang)*dist);const rz=Math.round(CZc+Math.sin(ang)*dist);if(rx<5||rx>WX-6||rz<5||rz>WZ-6)continue;buildRuin(rx,rz);ruinZones.push({cx:rx,cz:rz,r:7});}
+  // Ruins: 6 in inner zone + 16 in outer zone
+  for(let ri=0;ri<6;ri++){const ang=ri*(Math.PI*2/6)+(rnd()-0.5)*0.4;const dist=16+rnd()*6;const rx=Math.round(CXc+Math.cos(ang)*dist);const rz=Math.round(CZc+Math.sin(ang)*dist);if(rx<5||rx>WX-6||rz<5||rz>WZ-6)continue;buildRuin(rx,rz);ruinZones.push({cx:rx,cz:rz,r:7});}
+  for(let ri=0;ri<16;ri++){const ang=ri*(Math.PI*2/16)+(rnd()-0.5)*0.3;const dist=SEPARATOR_R+2+rnd()*28;const rx=Math.round(CXc+Math.cos(ang)*dist);const rz=Math.round(CZc+Math.sin(ang)*dist);if(rx<5||rx>WX-6||rz<5||rz>WZ-6)continue;buildRuin(rx,rz,true);ruinZones.push({cx:rx,cz:rz,r:9});}
+  // Dungeons: only in outer zone (8 dungeons)
+  for(let di=0;di<8;di++){const ang=di*(Math.PI*2/8)+(rnd()-0.5)*0.5+0.4;const dist=SEPARATOR_R+5+rnd()*22;const dx=Math.round(CXc+Math.cos(ang)*dist);const dz=Math.round(CZc+Math.sin(ang)*dist);if(dx<6||dx>WX-7||dz<6||dz>WZ-7)continue;buildDungeon(dx,dz);}
   carveRiver();
 }
-function buildRuin(cx,cz){
-  const h=tH(cx,cz)+1;const sz=4+((rnd()*3)|0);
-  for(let dx=-sz;dx<=sz;dx++)for(let dz=-sz;dz<=sz;dz++){const isWall=(Math.abs(dx)===sz||Math.abs(dz)===sz);if(!isWall)continue;const wallH=2+((rnd()*3)|0);for(let dy=0;dy<wallH;dy++){if(rnd()<0.35)continue;const X=cx+dx,Y=h+dy,Z=cz+dz;if(inb(X,Y,Z))world[VI(X,Y,Z)]=3;}}
+function buildRuin(cx,cz,isOuter){
+  const h=tH(cx,cz)+1;
+  // Outer ruins are bigger and more elaborate
+  const sz=isOuter?(5+((rnd()*4)|0)):(4+((rnd()*3)|0));
+  const wallH_base=isOuter?3:2;
+  for(let dx=-sz;dx<=sz;dx++)for(let dz=-sz;dz<=sz;dz++){const isWall=(Math.abs(dx)===sz||Math.abs(dz)===sz);if(!isWall)continue;const wallH=wallH_base+((rnd()*3)|0);for(let dy=0;dy<wallH;dy++){if(rnd()<(isOuter?0.25:0.35))continue;const X=cx+dx,Y=h+dy,Z=cz+dz;if(inb(X,Y,Z))world[VI(X,Y,Z)]=3;}}
   for(let dx=-sz+1;dx<sz;dx++)for(let dz=-sz+1;dz<sz;dz++){if(rnd()<0.25)continue;const X=cx+dx,Y=h,Z=cz+dz;if(inb(X,Y,Z))world[VI(X,Y,Z)]=3;}
-  for(let k=0;k<3;k++){const dx=(rnd()*sz*2|0)-sz,dz=(rnd()*sz*2|0)-sz;const X=cx+dx,Y=h,Z=cz+dz;if(inb(X,Y,Z)&&rnd()<0.5)world[VI(X,Y,Z)]=21;}
+  for(let k=0;k<(isOuter?6:3);k++){const dx=(rnd()*sz*2|0)-sz,dz=(rnd()*sz*2|0)-sz;const X=cx+dx,Y=h,Z=cz+dz;if(inb(X,Y,Z)&&rnd()<0.5)world[VI(X,Y,Z)]=21;}
+  // Outer ruins get steel debris and pillar fragments
+  if(isOuter){
+    for(let k=0;k<4;k++){const pdx=(rnd()*sz*1.6|0)-sz*0.8,pdz=(rnd()*sz*1.6|0)-sz*0.8;const ph=2+((rnd()*4)|0);for(let py=0;py<ph;py++){const X=cx+Math.round(pdx),Y=h+py,Z=cz+Math.round(pdz);if(inb(X,Y,Z))world[VI(X,Y,Z)]=7;}}
+    // Add a chest with loot
+    const chx=cx+((rnd()*4|0)-2),chz=cz+((rnd()*4|0)-2);
+    if(inb(chx,h,chz))world[VI(chx,h,chz)]=18;
+  }
+}
+function buildDungeon(cx,cz){
+  // Underground stone dungeon room
+  const h=tH(cx,cz);
+  const roomW=5+((rnd()*3)|0);
+  const roomH=4+((rnd()*2)|0);
+  const depth=h-2-((rnd()*3)|0);
+  if(depth<2)return;
+  // Carve room
+  for(let dx=-roomW;dx<=roomW;dx++)for(let dz=-roomW;dz<=roomW;dz++){
+    for(let dy=0;dy<=roomH;dy++){const X=cx+dx,Y=depth+dy,Z=cz+dz;if(inb(X,Y,Z))world[VI(X,Y,Z)]=AIR;}
+  }
+  // Stone floor and ceiling
+  for(let dx=-roomW-1;dx<=roomW+1;dx++)for(let dz=-roomW-1;dz<=roomW+1;dz++){
+    const X=cx+dx,Yf=depth-1,Yc=depth+roomH+1,Z=cz+dz;
+    if(inb(X,Yf,Z))world[VI(X,Yf,Z)]=3;
+    if(inb(X,Yc,Z))world[VI(X,Yc,Z)]=3;
+  }
+  // Stone walls
+  for(let dx=-roomW-1;dx<=roomW+1;dx++)for(let dz=-roomW-1;dz<=roomW+1;dz++)for(let dy=0;dy<=roomH;dy++){
+    const isWall=(Math.abs(dx)===roomW+1||Math.abs(dz)===roomW+1);
+    if(!isWall)continue;
+    const X=cx+dx,Y=depth+dy,Z=cz+dz;
+    if(inb(X,Y,Z))world[VI(X,Y,Z)]=3;
+  }
+  // Entrance shaft from surface
+  for(let dy=depth;dy<=h;dy++){const X=cx,Y=dy,Z=cz;if(inb(X,Y,Z))world[VI(X,Y,Z)]=AIR;}
+  // Interior: chest, torches, gunpowder traps
+  if(inb(cx+1,depth,cz+1))world[VI(cx+1,depth,cz+1)]=18; // chest
+  if(inb(cx-1,depth,cz-1))world[VI(cx-1,depth,cz-1)]=19; // torch
+  if(inb(cx+1,depth,cz-1))world[VI(cx+1,depth,cz-1)]=19; // torch
+  for(let k=0;k<4;k++){const tx=cx+((rnd()*roomW*1.4|0)-roomW*0.7),tz=cz+((rnd()*roomW*1.4|0)-roomW*0.7);if(inb(tx|0,depth,tz|0))world[VI(tx|0,depth,tz|0)]=21;} // gunpowder
+  // Dungeon ore veins (reward for exploring)
+  for(let k=0;k<6;k++){const ox=cx+((rnd()*roomW|0)-roomW/2|0),oy=depth-1,oz=cz+((rnd()*roomW|0)-roomW/2|0);if(inb(ox,oy,oz)&&world[VI(ox,oy,oz)]===3)world[VI(ox,oy,oz)]=rnd()<0.4?15:13;}
+  ruinZones.push({cx,cz,r:roomW+2});
 }
 function carveRiver(){
   let x=Math.round(CXc-20+rnd()*10);let z=5;const targetZ=WZ-6;
@@ -254,18 +314,37 @@ const terrainMat=new THREE.MeshLambertMaterial({map:ATLAS.tex,vertexColors:true}
 /* ============================================
    ZONE VISUAL RING
    ============================================ */
-let zoneMesh=null,zoneOutMesh=null;
-function buildZoneRing(radius,color,opacity){
-  const geo=new THREE.CylinderGeometry(radius,radius,60,64,1,true);
+let zoneMesh=null,zoneOutMesh=null,separatorMesh=null,outerWallMesh=null;
+function buildZoneRing(radius,color,opacity,height){
+  const geo=new THREE.CylinderGeometry(radius,radius,height||60,64,1,true);
   const mat=new THREE.MeshBasicMaterial({color,transparent:true,opacity,side:THREE.DoubleSide,depthWrite:false});
   const mesh=new THREE.Mesh(geo,mat);mesh.position.set(CXc,WY/2-10,CZc);mesh.frustumCulled=false;return mesh;
 }
+function buildSeparatorRing(){
+  // Double-ring separator: outer glow + inner core
+  const g=new THREE.Group();g.position.set(CXc,WY/2-10,CZc);
+  // Outer glow layer
+  const glow=new THREE.CylinderGeometry(SEPARATOR_R+0.5,SEPARATOR_R+0.5,60,96,1,true);
+  const glowMat=new THREE.MeshBasicMaterial({color:0x00ffee,transparent:true,opacity:0.08,side:THREE.DoubleSide,depthWrite:false});
+  g.add(new THREE.Mesh(glow,glowMat));
+  // Core ring
+  const core=new THREE.CylinderGeometry(SEPARATOR_R,SEPARATOR_R,60,96,1,true);
+  const coreMat=new THREE.MeshBasicMaterial({color:0x35e0d4,transparent:true,opacity:0.22,side:THREE.DoubleSide,depthWrite:false});
+  g.add(new THREE.Mesh(core,coreMat));
+  g.frustumCulled=false;return g;
+}
 function rebuildZoneMeshes(){
-  if(zoneMesh){scene.remove(zoneMesh);zoneMesh.geometry.dispose();zoneMesh.material.dispose();}
-  if(zoneOutMesh){scene.remove(zoneOutMesh);zoneOutMesh.geometry.dispose();zoneOutMesh.material.dispose();}
-  zoneMesh=buildZoneRing(battleZoneRadius,0x4adc6f,0.18);
-  zoneOutMesh=buildZoneRing(Math.min(WX,WZ)/2-1,0xe2483d,0.12);
-  scene.add(zoneMesh);scene.add(zoneOutMesh);
+  if(zoneMesh){scene.remove(zoneMesh);zoneMesh.geometry.dispose();zoneMesh.material.dispose();zoneMesh=null;}
+  if(zoneOutMesh){scene.remove(zoneOutMesh);zoneOutMesh.geometry.dispose();zoneOutMesh.material.dispose();zoneOutMesh=null;}
+  if(separatorMesh){scene.remove(separatorMesh);separatorMesh=null;}
+  if(outerWallMesh){scene.remove(outerWallMesh);outerWallMesh.geometry.dispose();outerWallMesh.material.dispose();outerWallMesh=null;}
+  // Inner zone ring (green)
+  zoneMesh=buildZoneRing(INNER_ZONE_R,0x4adc6f,0.18);
+  // Red outer boundary
+  zoneOutMesh=buildZoneRing(OUTER_ZONE_R,0xe2483d,0.14);
+  // Cyan/teal transparent separator (walkthrough)
+  separatorMesh=buildSeparatorRing();
+  scene.add(zoneMesh);scene.add(zoneOutMesh);scene.add(separatorMesh);
 }
 
 /* ============================================
@@ -389,15 +468,16 @@ function buildZombieModel(variant){
   const mEye=new THREE.MeshBasicMaterial({color:eyeCol});
   const isBrute=(variant==="brute_zombie");
   const sc=isBrute?1.6:1.0;
-  // Legs (angular low-poly)
-  const legs=[];
+  // Legs (angular low-poly with knees)
+  const legs=[],lowerLegs=[];
   for(const s of[-1,1]){
     const piv=new THREE.Group();piv.position.set(0.2*s,0.55*sc,0);
     const upper=box(0.22*sc,0.32*sc,0.22*sc,mCloak);upper.position.y=-0.16*sc;piv.add(upper);
-    const lower=box(0.18*sc,0.3*sc,0.18*sc,mSkin);lower.position.y=-0.48*sc;piv.add(lower);
-    // Foot (angular)
-    const foot=box(0.22*sc,0.1*sc,0.3*sc,mCloak);foot.position.set(0,-0.64*sc,0.06*sc);piv.add(foot);
-    g.add(piv);legs.push(piv);
+    const lowerGrp=new THREE.Group();lowerGrp.position.y=-0.32*sc;
+    const lower=box(0.18*sc,0.3*sc,0.18*sc,mSkin);lower.position.y=-0.16*sc;lowerGrp.add(lower);
+    const foot=box(0.22*sc,0.1*sc,0.3*sc,mCloak);foot.position.set(0,-0.32*sc,0.06*sc);lowerGrp.add(foot);
+    piv.add(lowerGrp);
+    g.add(piv);legs.push(piv);lowerLegs.push(lowerGrp);
   }
   // Torso (wider, more angular than MC)
   const torso=box(0.72*sc,0.82*sc,0.44*sc,mCloak);torso.position.y=0.96*sc;g.add(torso);
@@ -405,16 +485,18 @@ function buildZombieModel(variant){
   for(const s of[-1,1]){
     const pad=box(0.18*sc,0.18*sc,0.42*sc,mSkin);pad.position.set(0.46*s,1.3*sc,0);g.add(pad);
   }
-  // Arms (outstretched for zombie look)
-  const arms=[];
+  // Arms (outstretched for zombie look with articulated elbows)
+  const arms=[],lowerArms=[];
   for(const s of[-1,1]){
     const piv=new THREE.Group();piv.position.set(0.52*s,1.22*sc,0);
     const upper=box(0.22*sc,0.38*sc,0.22*sc,mSkin);upper.position.y=-0.19*sc;piv.add(upper);
-    const lower=box(0.18*sc,0.34*sc,0.18*sc,mCloak);lower.position.y=-0.58*sc;piv.add(lower);
-    const hand=box(0.24*sc,0.18*sc,0.24*sc,mSkin);hand.position.y=-0.82*sc;piv.add(hand);
+    const lowerGrp=new THREE.Group();lowerGrp.position.y=-0.38*sc;
+    const lower=box(0.18*sc,0.34*sc,0.18*sc,mCloak);lower.position.y=-0.2*sc;lowerGrp.add(lower);
+    const hand=box(0.24*sc,0.18*sc,0.24*sc,mSkin);hand.position.y=-0.44*sc;lowerGrp.add(hand);
+    piv.add(lowerGrp);
     // Zombie arms pre-angled forward
-    if(variant==="zombie"||variant==="brute_zombie"){piv.rotation.x=-0.8;}
-    g.add(piv);arms.push(piv);
+    if(variant==="zombie"||variant==="brute_zombie"){piv.rotation.x=-0.8;lowerGrp.rotation.x=-0.1;}
+    g.add(piv);arms.push(piv);lowerArms.push(lowerGrp);
   }
   // Head (angular, angular jaw)
   const headG=new THREE.Group();headG.position.y=(1.37+0.26)*sc;
@@ -424,17 +506,30 @@ function buildZombieModel(variant){
     const h1=box(0.12*sc,0.12*sc,0.06*sc,new THREE.MeshBasicMaterial({color:0x000000}));h1.position.set(-0.12*sc,0.06*sc,-0.27*sc);headG.add(h1);
     const h2=h1.clone();h2.position.set(0.12*sc,0.06*sc,-0.27*sc);headG.add(h2);
   }
-  // Eyes
+  // Eyes (protruding 3D blocks)
   for(const s of[-1,1]){
-    const eye=new THREE.Mesh(new THREE.PlaneGeometry(0.16*sc,0.1*sc),mEye);
-    eye.position.set(0.14*s*sc,0.04*sc,-0.27*sc);eye.rotation.y=Math.PI;
+    const eye=box(0.12*sc,0.1*sc,0.06*sc,mEye);
+    eye.position.set(0.14*s*sc,0.04*sc,-0.28*sc);
     // Glow socket
     const glow=new THREE.Mesh(new THREE.PlaneGeometry(0.2*sc,0.14*sc),new THREE.MeshBasicMaterial({color:glowCol,transparent:true,opacity:0.4}));
-    glow.position.set(0.14*s*sc,0.04*sc,-0.275*sc);glow.rotation.y=Math.PI;
+    glow.position.set(0.14*s*sc,0.04*sc,-0.31*sc);glow.rotation.y=Math.PI;
     headG.add(eye);headG.add(glow);
   }
-  // Jaw (undead detail)
-  const jaw=box(0.44*sc,0.1*sc,0.08*sc,mCloak);jaw.position.set(0,-0.22*sc,-0.24*sc);headG.add(jaw);
+  // Nose
+  if(variant!=="skeleton"){
+    const nose=box(0.08*sc,0.14*sc,0.08*sc,mSkin);
+    nose.position.set(0,-0.08*sc,-0.28*sc);
+    headG.add(nose);
+  }
+  // Jaw with teeth
+  const jawGrp=new THREE.Group();
+  jawGrp.position.set(0,-0.22*sc,-0.24*sc);
+  const jawBase=box(0.44*sc,0.1*sc,0.08*sc,mCloak);
+  jawGrp.add(jawBase);
+  const teeth=box(0.32*sc,0.06*sc,0.04*sc,lpm(0xdddddd));
+  teeth.position.set(0,0.08*sc,-0.04*sc);
+  jawGrp.add(teeth);
+  headG.add(jawGrp);
   // Horns on brute
   if(variant==="brute_zombie"){
     for(const s of[-1,1]){
@@ -453,7 +548,7 @@ function buildZombieModel(variant){
   hb.position.y=(1.37+0.5+0.4)*sc;
   g.add(hb);
   const parts=[torso,...legs.map(p=>p.children[0]),...arms.map(p=>p.children[0])];
-  return{group:g,legs,arms,head:headG,hb,fg,parts,skinMat:mSkin,isSkeleton:variant==="skeleton"};
+  return{group:g,legs,lowerLegs,arms,lowerArms,head:headG,jaw:jawGrp,hb,fg,parts,skinMat:mSkin,isSkeleton:variant==="skeleton"};
 }
 
 /* ============================================
@@ -552,13 +647,23 @@ function updateEnemies(dt){
     }
     const sp2=Math.hypot(e.vel.x,e.vel.z);e.walk+=dt*(3+sp2*2);
     const sw=Math.sin(e.walk*2.2)*Math.min(1,sp2/e.t.spd)*0.8;
-    if(md.legs){md.legs[0].rotation.x=sw;md.legs[1].rotation.x=-sw;}
+    if(md.legs){
+      md.legs[0].rotation.x=sw;md.legs[1].rotation.x=-sw;
+      if(md.lowerLegs){
+        md.lowerLegs[0].rotation.x=Math.max(0,sw*1.5);
+        md.lowerLegs[1].rotation.x=Math.max(0,-sw*1.5);
+      }
+    }
     if(md.arms&&!(moved<want*dt*0.4&&(bLow||bHi))&&variant(e)!=="zombie"&&variant(e)!=="brute_zombie"){
       md.arms[0].rotation.x=-sw*0.7;md.arms[1].rotation.x=sw*0.7;
+      if(md.lowerArms){
+        md.lowerArms[0].rotation.x=-0.2;md.lowerArms[1].rotation.x=-0.2;
+      }
     }
     md.group.position.set(e.pos.x,e.pos.y,e.pos.z);md.group.rotation.y=e.yaw;
-    md.group.position.y+=e.onGround?Math.abs(Math.sin(e.walk*2.2))*0.03*Math.min(1,sp2):0;
+    md.group.position.y+=e.onGround?Math.abs(Math.sin(e.walk*2.2))*0.05*Math.min(1,sp2):0;
     if(md.head)md.head.rotation.x=Math.max(-0.5,Math.min(0.5,(player.pos.y+1.4-e.pos.y-e.h)*-0.2));
+    if(md.jaw)md.jaw.rotation.x=Math.sin(time*5)*0.2+0.1; // Chattering teeth
     // Flash on hit
     if(e.flash>0){
       e.flash=Math.max(0,e.flash-dt*4);
@@ -639,28 +744,35 @@ function buildDogModel(isTamed,isEnemy){
   for(const s of[-1,1]){
     const ear=cone(0.1,0.24,3,mDark);ear.position.set(0.18*s,0.26,0);ear.rotation.z=s*0.25;hGrp.add(ear);
   }
+  // Jaw
+  const jaw=box(0.26,0.08,0.26,mFur);jaw.position.set(0,-0.22,0.26);hGrp.add(jaw);
+  const teeth=box(0.18,0.04,0.04,lpm(0xdddddd));teeth.position.set(0,0.06,0.12);jaw.add(teeth);
   // Tamed collar
   if(isTamed){
     const collar=box(0.5,0.06,0.5,lpm(isEnemy?0xff2222:0x2255ff));collar.position.y=-0.18;hGrp.add(collar);
   }
   g.add(hGrp);
-  // Legs
-  const legs=[];
+  // Legs (articulated)
+  const legs=[],lowerLegs=[];
   const legPositions=[[-0.22,0,0.28],[-0.22,0,-0.28],[0.22,0,0.28],[0.22,0,-0.28]];
   for(const lp of legPositions){
     const piv=new THREE.Group();piv.position.set(lp[0],0.3,lp[2]);
     const upper=box(0.14,0.22,0.14,mFur);upper.position.y=-0.11;piv.add(upper);
-    const lower=box(0.11,0.2,0.11,mDark);lower.position.y=-0.32;piv.add(lower);
-    const paw=box(0.14,0.08,0.18,mFur);paw.position.set(0,-0.44,0.04);piv.add(paw);
-    g.add(piv);legs.push(piv);
+    const lowerGrp=new THREE.Group();lowerGrp.position.y=-0.22;
+    const lower=box(0.11,0.2,0.11,mDark);lower.position.y=-0.1;lowerGrp.add(lower);
+    const paw=box(0.14,0.08,0.18,mFur);paw.position.set(0,-0.22,0.04);lowerGrp.add(paw);
+    piv.add(lowerGrp);
+    g.add(piv);legs.push(piv);lowerLegs.push(lowerGrp);
   }
-  // Tail
+  // Tail (2 segments)
   const tailG=new THREE.Group();tailG.position.set(0,0.52,-0.44);
   const tail1=box(0.08,0.08,0.28,mDark);tail1.position.set(0,0.1,-0.1);tailG.add(tail1);
-  const tail2=box(0.06,0.06,0.2,mFur);tail2.position.set(0,0.24,-0.24);tail2.rotation.x=-0.5;tailG.add(tail2);
+  const tail2Grp=new THREE.Group();tail2Grp.position.set(0,0.05,-0.24);
+  const tail2=box(0.12,0.12,0.3,mFur);tail2.position.set(0,0.04,-0.12);tail2.rotation.x=-0.2;tail2Grp.add(tail2);
+  tailG.add(tail2Grp);
   g.add(tailG);
   const {hb,fg}=buildHPBar();hb.position.y=0.95;g.add(hb);
-  return{group:g,legs,head:hGrp,tail:tailG,hb,fg,parts:[body,chest,...legs.map(p=>p.children[0])]};
+  return{group:g,legs,lowerLegs,head:hGrp,jaw,tail:tailG,tail2:tail2Grp,hb,fg,parts:[body,chest,...legs.map(p=>p.children[0])]};
 }
 
 function spawnWildDog(x,z,isEnemyDog){
@@ -752,7 +864,17 @@ function updateDogs(dt){
     const sp=Math.hypot(d.vel.x,d.vel.z);
     d.walk=(d.walk||0)+dt*(5+sp*3);
     const sw=Math.sin(d.walk*3.5)*Math.min(1,sp/2)*0.7;
-    d.model.legs.forEach((l,li)=>l.rotation.x=(li%2===0?sw:-sw));
+    d.model.legs.forEach((l,li)=>{
+      l.rotation.x=(li%2===0?sw:-sw);
+    });
+    if(d.model.lowerLegs){
+      d.model.lowerLegs.forEach((ll,li)=>{
+        const rot = li%2===0?sw:-sw;
+        ll.rotation.x=rot>0?Math.max(0,rot*1.2):0;
+      });
+    }
+    if(d.model.tail2)d.model.tail2.rotation.x=Math.sin(time*12)*0.1;
+    if(d.model.jaw)d.model.jaw.rotation.x=(d.atkCd>0)?0.3:0;
     d.model.group.position.copy(d.pos);d.model.group.rotation.y=d.yaw;
     if(d.atkCd)d.atkCd=Math.max(0,d.atkCd-dt);
     // HP bar
@@ -811,66 +933,110 @@ function buildAnimalModel(key,t){
     const snout=box(0.16,0.14,0.22,mAcc);snout.position.set(0,1.14,0.7);g.add(snout);
     // Antlers
     for(const s of[-1,1]){const a=box(0.04,0.36,0.04,mAcc);a.position.set(0.1*s,1.5,0.44);g.add(a);const a2=box(0.04,0.22,0.04,mAcc);a2.position.set(0.18*s,1.6,0.44);a2.rotation.z=s*0.5;g.add(a2);}
+    const lowerLegs=[];
     const lp=[[-0.22,0,0.32],[-0.22,0,-0.32],[0.22,0,0.32],[0.22,0,-0.32]];
-    for(const l of lp){const piv=new THREE.Group();piv.position.set(l[0],0.45,l[2]);const leg=box(0.12,0.42,0.12,mAcc);leg.position.y=-0.21;piv.add(leg);const hoof=box(0.14,0.08,0.16,mAcc);hoof.position.set(0,-0.44,0.02);piv.add(hoof);g.add(piv);legs.push(piv);}
-    return{group:g,legs,head};
+    for(const l of lp){
+      const piv=new THREE.Group();piv.position.set(l[0],0.45,l[2]);
+      const upper=box(0.12,0.24,0.12,mAcc);upper.position.y=-0.12;piv.add(upper);
+      const lowerG=new THREE.Group();lowerG.position.y=-0.24;
+      const lower=box(0.1,0.22,0.1,mAcc);lower.position.y=-0.11;lowerG.add(lower);
+      const hoof=box(0.14,0.08,0.16,mAcc);hoof.position.set(0,-0.22,0.02);lowerG.add(hoof);
+      piv.add(lowerG);g.add(piv);legs.push(piv);lowerLegs.push(lowerG);
+    }
+    const tail=box(0.1,0.14,0.16,mAcc);tail.position.set(0,0.7,-0.55);tail.rotation.x=0.5;g.add(tail);
+    return{group:g,legs,lowerLegs,head,tail};
   }
   if(key==="fox"){
     const body=box(0.38,0.3,0.65,mMain);body.position.y=0.35;g.add(body);
-    // White belly
     const belly=box(0.28,0.2,0.5,mAcc);belly.position.set(0,0.28,0.02);g.add(belly);
     const head=box(0.32,0.24,0.34,mMain);head.position.set(0,0.55,0.35);g.add(head);
     const snout=box(0.14,0.12,0.2,lpm(0xc0501a));snout.position.set(0,0.5,0.5);g.add(snout);
-    // Pointy ears
     for(const s of[-1,1]){const ear=cone(0.07,0.2,3,mMain);ear.position.set(0.11*s,0.74,0.3);g.add(ear);}
+    const lowerLegs=[];
     const lp=[[-0.14,0,0.2],[-0.14,0,-0.2],[0.14,0,0.2],[0.14,0,-0.2]];
-    for(const l of lp){const piv=new THREE.Group();piv.position.set(l[0],0.24,l[2]);const leg=box(0.09,0.22,0.09,mAcc);leg.position.y=-0.11;piv.add(leg);g.add(piv);legs.push(piv);}
-    // Fluffy tail
-    const tail=box(0.2,0.2,0.36,mAcc);tail.position.set(0,0.4,-0.42);tail.rotation.x=0.5;g.add(tail);
-    return{group:g,legs,head};
+    for(const l of lp){
+      const piv=new THREE.Group();piv.position.set(l[0],0.24,l[2]);
+      const upper=box(0.09,0.12,0.09,mAcc);upper.position.y=-0.06;piv.add(upper);
+      const lowerG=new THREE.Group();lowerG.position.y=-0.12;
+      const lower=box(0.08,0.14,0.08,lpm(0x111111));lower.position.y=-0.07;lowerG.add(lower);
+      piv.add(lowerG);g.add(piv);legs.push(piv);lowerLegs.push(lowerG);
+    }
+    const tail=new THREE.Group();tail.position.set(0,0.4,-0.42);
+    const tailBody=box(0.2,0.2,0.36,mAcc);tailBody.position.set(0,0,-0.18);tail.add(tailBody);
+    const tailTip=box(0.16,0.16,0.16,lpm(0xffffff));tailTip.position.set(0,0,-0.44);tail.add(tailTip);
+    tail.rotation.x=0.5;g.add(tail);
+    return{group:g,legs,lowerLegs,head,tail};
   }
   if(key==="rabbit"){
     const body=box(0.3,0.28,0.4,mMain);body.position.y=0.28;g.add(body);
     const head=box(0.24,0.22,0.26,mMain);head.position.set(0,0.5,0.2);g.add(head);
     for(const s of[-1,1]){const ear=box(0.06,0.24,0.04,mAcc);ear.position.set(0.07*s,0.74,0.18);g.add(ear);}
+    const lowerLegs=[];
     const lp=[[-0.1,0,0.1],[-0.1,0,-0.1],[0.1,0,0.1],[0.1,0,-0.1]];
-    for(const l of lp){const piv=new THREE.Group();piv.position.set(l[0],0.18,l[2]);const leg=box(0.08,0.16,l[2]>0?0.16:0.1,mAcc);leg.position.y=-0.08;piv.add(leg);g.add(piv);legs.push(piv);}
-    return{group:g,legs,head};
+    for(const l of lp){
+      const piv=new THREE.Group();piv.position.set(l[0],0.18,l[2]);
+      const upper=box(0.08,0.16,l[2]>0?0.16:0.1,mAcc);upper.position.y=-0.08;piv.add(upper);
+      g.add(piv);legs.push(piv);
+    }
+    const tail=box(0.1,0.1,0.1,lpm(0xffffff));tail.position.set(0,0.3,-0.22);g.add(tail);
+    return{group:g,legs,head,tail};
   }
   if(key==="bear"){
     const body=box(0.85,0.7,1.4,mMain);body.position.y=0.78;g.add(body);
     const head=box(0.7,0.52,0.64,mMain);head.position.set(0,1.1,0.65);g.add(head);
     const snout=box(0.38,0.28,0.28,mAcc);snout.position.set(0,1.0,0.84);g.add(snout);
+    const nose=box(0.12,0.08,0.06,lpm(0x111111));nose.position.set(0,1.06,0.98);g.add(nose);
     for(const s of[-1,1]){const ear=box(0.16,0.16,0.12,mMain);ear.position.set(0.26*s,1.38,0.5);g.add(ear);}
+    const lowerLegs=[];
     const lp=[[-0.32,0,0.38],[-0.32,0,-0.38],[0.32,0,0.38],[0.32,0,-0.38]];
-    for(const l of lp){const piv=new THREE.Group();piv.position.set(l[0],0.55,l[2]);const leg=box(0.24,0.52,0.24,mAcc);leg.position.y=-0.26;piv.add(leg);const paw=box(0.3,0.1,0.38,mMain);paw.position.set(0,-0.54,0.05);piv.add(paw);g.add(piv);legs.push(piv);}
-    return{group:g,legs,head};
+    for(const l of lp){
+      const piv=new THREE.Group();piv.position.set(l[0],0.55,l[2]);
+      const upper=box(0.24,0.3,0.24,mMain);upper.position.y=-0.15;piv.add(upper);
+      const lowerG=new THREE.Group();lowerG.position.y=-0.3;
+      const lower=box(0.22,0.24,0.22,mAcc);lower.position.y=-0.12;lowerG.add(lower);
+      const paw=box(0.3,0.1,0.38,mMain);paw.position.set(0,-0.24,0.05);lowerG.add(paw);
+      piv.add(lowerG);g.add(piv);legs.push(piv);lowerLegs.push(lowerG);
+    }
+    return{group:g,legs,lowerLegs,head};
   }
   if(key==="wolf"){
     const body=box(0.55,0.42,0.9,mMain);body.position.y=0.5;g.add(body);
     const head=box(0.44,0.36,0.44,mMain);head.position.set(0,0.72,0.46);g.add(head);
     const snout=box(0.24,0.18,0.28,mAcc);snout.position.set(0,0.62,0.64);g.add(snout);
+    const jaw=box(0.2,0.06,0.24,mMain);jaw.position.set(0,0.5,0.62);g.add(jaw);
     for(const s of[-1,1]){const ear=cone(0.08,0.22,3,mAcc);ear.position.set(0.16*s,0.96,0.38);g.add(ear);}
+    const lowerLegs=[];
     const lp=[[-0.2,0,0.28],[-0.2,0,-0.28],[0.2,0,0.28],[0.2,0,-0.28]];
-    for(const l of lp){const piv=new THREE.Group();piv.position.set(l[0],0.34,l[2]);const leg=box(0.12,0.32,0.12,mAcc);leg.position.y=-0.16;piv.add(leg);g.add(piv);legs.push(piv);}
-    return{group:g,legs,head};
+    for(const l of lp){
+      const piv=new THREE.Group();piv.position.set(l[0],0.34,l[2]);
+      const upper=box(0.12,0.18,0.12,mMain);upper.position.y=-0.09;piv.add(upper);
+      const lowerG=new THREE.Group();lowerG.position.y=-0.18;
+      const lower=box(0.1,0.18,0.1,mAcc);lower.position.y=-0.09;lowerG.add(lower);
+      piv.add(lowerG);g.add(piv);legs.push(piv);lowerLegs.push(lowerG);
+    }
+    const tail=box(0.14,0.14,0.36,mAcc);tail.position.set(0,0.55,-0.45);tail.rotation.x=0.4;g.add(tail);
+    return{group:g,legs,lowerLegs,head,tail,jaw};
   }
   if(key==="vulture"){
     const body=box(0.5,0.35,0.7,mMain);body.position.y=0.38;g.add(body);
     const head=box(0.28,0.24,0.28,lpm(0x880000));head.position.set(0,0.6,0.3);g.add(head);
     const beak=box(0.08,0.08,0.22,lpm(0xcc9900));beak.position.set(0,0.54,0.46);g.add(beak);
-    // Wings (flat)
-    for(const s of[-1,1]){const wing=box(0.8,0.06,0.5,mAcc);wing.position.set(0.6*s,0.4,0);wing.rotation.z=s*0.3;g.add(wing);}
+    const wings=[];
+    for(const s of[-1,1]){
+      const wingGrp=new THREE.Group();wingGrp.position.set(0.25*s,0.4,0);
+      const innerWing=box(0.4,0.06,0.5,mAcc);innerWing.position.set(0.2*s,0,0);wingGrp.add(innerWing);
+      const outerWing=box(0.4,0.04,0.4,mMain);outerWing.position.set(0.6*s,0,-0.05);wingGrp.add(outerWing);
+      g.add(wingGrp);wings.push(wingGrp);
+    }
     const lp=[[-0.12,0,0.04],[0.12,0,0.04]];
     for(const l of lp){const piv=new THREE.Group();piv.position.set(l[0],0.2,l[2]);const leg=box(0.06,0.18,0.06,lpm(0xcc9900));leg.position.y=-0.09;piv.add(leg);g.add(piv);legs.push(piv);}
-    return{group:g,legs,head};
+    return{group:g,legs,head,wings};
   }
   if(key==="serpent"){
-    const segs=[];for(let s=0;s<5;s++){const seg=box(0.16-s*0.02,0.14-s*0.01,0.26,s%2===0?mMain:mAcc);seg.position.set(0,0.18,s*0.22-0.44);g.add(seg);segs.push(seg);}
-    const head=box(0.22,0.18,0.28,mMain);head.position.set(0,0.22,0.68);g.add(head);
-    const tongue=box(0.02,0.02,0.16,new THREE.MeshBasicMaterial({color:0xff2222}));tongue.position.set(0,0.2,0.84);g.add(tongue);
-    // No legs for serpent
-    return{group:g,legs:[],head,segs};
+    const segs=[];for(let s=0;s<8;s++){const seg=box(0.18-s*0.015,0.14-s*0.01,0.24,s%2===0?mMain:mAcc);seg.position.set(0,0.18,s*0.22-0.8);g.add(seg);segs.push(seg);}
+    const head=box(0.24,0.2,0.32,mMain);head.position.set(0,0.22,0.9);g.add(head);
+    const tongue=box(0.02,0.02,0.16,new THREE.MeshBasicMaterial({color:0xff2222}));tongue.position.set(0,0.18,1.08);g.add(tongue);
+    return{group:g,legs:[],head,segs,tongue};
   }
   // Fallback
   const body=box(0.5,0.4,0.8,mMain);body.position.y=0.4;g.add(body);
@@ -900,7 +1066,7 @@ function spawnAnimals(){
   const outKeys=["bear","wolf","wolf","vulture","serpent"];
   for(let i=0;i<18;i++){
     const ang=Math.random()*Math.PI*2;
-    const dist=Math.min(WX,WZ)/2-4+Math.random()*4;
+    const dist=ARENA_R-2+Math.random()*4;
     const x=Math.max(4,Math.min(WX-5,CXc+Math.cos(ang)*dist));
     const z=Math.max(4,Math.min(WZ-5,CZc+Math.sin(ang)*dist));
     const h=tH(x|0,z|0);if(h<7)continue;
@@ -938,7 +1104,30 @@ function updateAnimals(dt){
     const sp=Math.hypot(a.vel.x,a.vel.z);if(sp>0.1)a.yaw=Math.atan2(a.vel.x,a.vel.z);
     a.walk+=dt*(4+sp*2);
     const sw=Math.sin(a.walk*3)*Math.min(1,sp/2)*0.6;
-    a.model.legs.forEach((l,li)=>l.rotation.x=(li%2===0?sw:-sw));
+    a.model.legs.forEach((l,li)=>{
+      l.rotation.x=(li%2===0?sw:-sw);
+    });
+    if(a.model.lowerLegs){
+      a.model.lowerLegs.forEach((ll,li)=>{
+        const rot = li%2===0?sw:-sw;
+        ll.rotation.x=rot>0?Math.max(0,rot*1.2):0;
+      });
+    }
+    if(a.model.tail)a.model.tail.rotation.x=Math.sin(time*8)*0.2+(a.key==="wolf"?0.4:0.5);
+    if(a.model.jaw)a.model.jaw.rotation.x=(a.atkCd>0)?0.3:0;
+    if(a.model.wings){
+      const flap = Math.sin(time*10)*0.5;
+      a.model.wings[0].rotation.z = flap;
+      a.model.wings[1].rotation.z = -flap;
+      a.model.wings[0].children[1].rotation.z = flap*0.5; // outer wing bend
+      a.model.wings[1].children[1].rotation.z = -flap*0.5;
+    }
+    if(a.model.segs){
+      a.model.segs.forEach((seg,si)=>{
+        seg.position.x = Math.sin(time*5 - si*0.5)*0.2;
+      });
+      a.model.head.position.x = Math.sin(time*5)*0.2;
+    }
     if(a.t.flies)a.model.group.rotation.z=Math.sin(time*3)*0.2;
     a.model.group.position.copy(a.pos);a.model.group.rotation.y=a.yaw;
     if(Math.random()<0.0005)SFX.animal();
@@ -967,11 +1156,16 @@ function buildDragonModel(){
   const chest=box(0.9,0.7,1.0,mBelly);chest.position.set(0,2.1,0.8);g.add(chest);
   // Neck
   const neck=box(0.5,0.55,0.9,mBody);neck.position.set(0,2.5,1.4);neck.rotation.x=-0.4;g.add(neck);
+  // Dorsal Spikes (Body)
+  for(let i=0;i<4;i++){const s=cone(0.12,0.4,4,mHorn);s.position.set(0,2.7,i*0.5-0.5);s.rotation.x=-0.2;g.add(s);}
   // Head (angular dragon skull)
   const headG=new THREE.Group();headG.position.set(0,2.8,2.1);
   const skull=box(0.8,0.62,1.0,mBody);headG.add(skull);
-  // Jaw
-  const jaw=box(0.72,0.22,0.9,mBody);jaw.position.set(0,-0.3,0.1);headG.add(jaw);
+  // Jaw with teeth
+  const jawGrp=new THREE.Group();jawGrp.position.set(0,-0.3,0.1);
+  const jawBase=box(0.72,0.22,0.9,mBody);jawGrp.add(jawBase);
+  const teeth=box(0.5,0.1,0.8,lpm(0xeeeeee));teeth.position.set(0,0.16,0);jawGrp.add(teeth);
+  headG.add(jawGrp);
   // Snout
   const snout=box(0.5,0.3,0.7,mBody);snout.position.set(0,-0.05,0.68);headG.add(snout);
   // Eyes
@@ -985,41 +1179,48 @@ function buildDragonModel(){
     const horn2=cone(0.07,0.4,4,mHorn);horn2.position.set(0.42*s,0.3,-0.3);horn2.rotation.set(0.4,0,s*0.6);headG.add(horn2);
   }
   g.add(headG);
-  // Wings (large flat angular)
+  // Wings (Segmented)
+  const wings=[];
   for(const s of[-1,1]){
     const wGrp=new THREE.Group();wGrp.position.set(0.55*s,2.4,0.2);
-    // Main wing membrane (low-poly flat)
-    const wBody=box(1.6,0.08,1.4,mWing);wBody.position.set(0.8*s,0,-0.2);wGrp.add(wBody);
-    const wTip=box(0.8,0.06,0.8,mWing);wTip.position.set(1.6*s,-0.1,-0.6);wGrp.add(wTip);
-    const wBone1=box(0.08,0.08,1.4,mBody);wBone1.position.set(0,0.06,-0.2);wGrp.add(wBone1);
-    const wBone2=box(0.06,0.06,0.8,mBody);wBone2.position.set(0.8*s,0.06,-0.6);wGrp.add(wBone2);
+    // Inner Wing
+    const innerW=box(1.2,0.08,1.4,mWing);innerW.position.set(0.6*s,0,-0.2);wGrp.add(innerW);
+    const bone1=box(0.08,0.08,1.4,mBody);bone1.position.set(0.6*s,0.06,-0.2);wGrp.add(bone1);
+    // Outer Wing Group
+    const outWGrp=new THREE.Group();outWGrp.position.set(1.2*s,0,0);
+    const outerW=box(1.0,0.06,0.8,mWing);outerW.position.set(0.5*s,0,-0.4);outWGrp.add(outerW);
+    const bone2=box(0.06,0.06,0.8,mBody);bone2.position.set(0.5*s,0.06,-0.4);outWGrp.add(bone2);
+    wGrp.add(outWGrp);
+    wings.push(wGrp);
     g.add(wGrp);
   }
   // Tail (segmented)
-  const tailSegs=[];for(let t=0;t<5;t++){
+  const tailSegs=[];for(let t=0;t<6;t++){
     const seg=box(0.65-t*0.1,0.5-t*0.07,0.5,mBody);seg.position.set(0,2.1-t*0.1,-(1.2+t*0.52));g.add(seg);tailSegs.push(seg);
-    const spike=cone(0.08,0.32,4,mHorn);spike.position.set(0,2.3-t*0.08,-(1.2+t*0.52));spike.rotation.x=0.5;g.add(spike);
+    const spike=cone(0.08,0.32,4,mHorn);spike.position.set(0,2.4-t*0.1,-(1.2+t*0.52));spike.rotation.x=0.5;g.add(spike);
   }
-  // Legs
-  const legs=[];
+  // Legs (articulated)
+  const legs=[],lowerLegs=[];
   for(const s of[-1,1]){
     const piv=new THREE.Group();piv.position.set(0.55*s,1.7,0.4);
     const upper=box(0.3,0.7,0.3,mBody);upper.position.y=-0.35;piv.add(upper);
-    const lower=box(0.24,0.6,0.24,mBody);lower.position.y=-0.9;piv.add(lower);
-    const claw=box(0.36,0.14,0.5,mHorn);claw.position.set(0,-1.24,0.1);piv.add(claw);
-    g.add(piv);legs.push(piv);
+    const lowerGrp=new THREE.Group();lowerGrp.position.y=-0.7;
+    const lower=box(0.24,0.6,0.24,mBody);lower.position.y=-0.2;lowerGrp.add(lower);
+    const claw=box(0.36,0.14,0.5,mHorn);claw.position.set(0,-0.54,0.1);lowerGrp.add(claw);
+    piv.add(lowerGrp);
+    g.add(piv);legs.push(piv);lowerLegs.push(lowerGrp);
   }
   // HP bar
   const {hb,fg}=buildHPBar();
   hb.position.y=4.2;hb.scale.setScalar(3);
   g.add(hb);
-  return{group:g,headG,legs,tailSegs,hb,fg,parts:[body,chest,neck,skull]};
+  return{group:g,headG,jaw:jawGrp,legs,lowerLegs,wings,tailSegs,hb,fg,parts:[body,chest,neck,skull]};
 }
 
 function spawnDragon(){
   if(dragon&&!dragon.dead)return;
   const ang=Math.random()*Math.PI*2;
-  const dist=Math.min(WX,WZ)/2-6;
+  const dist=ARENA_R-4;
   const x=Math.max(6,Math.min(WX-7,CXc+Math.cos(ang)*dist));
   const z=Math.max(6,Math.min(WZ-7,CZc+Math.sin(ang)*dist));
   const md=buildDragonModel();
@@ -1054,11 +1255,28 @@ function updateDragon(dt){
     return;
   }
   d.wingFlap+=dt*2.8;
-  // Wing animation
-  const flapAng=Math.sin(d.wingFlap)*0.6+0.2;
-  md.group.children.forEach(c=>{
-    if(c.userData&&c.userData.isWing)c.rotation.z=flapAng;
-  });
+  // Segmented wing animation
+  const flapAng=Math.sin(d.wingFlap)*0.6;
+  if(md.wings){
+    md.wings[0].rotation.z = flapAng;
+    md.wings[1].rotation.z = -flapAng;
+    md.wings[0].children[1].rotation.z = flapAng*0.4;
+    md.wings[1].children[1].rotation.z = -flapAng*0.4;
+  }
+  // Jaw animation
+  if(md.jaw){
+    md.jaw.rotation.x=(d.fireBreathCd>0&&d.fireBreathCd<0.8)?0.4:0;
+  }
+  // Legs animation
+  if(md.legs){
+    const legSw=Math.sin(time*2)*0.2;
+    md.legs[0].rotation.x = legSw-0.2;
+    md.legs[1].rotation.x = -legSw-0.2;
+    if(md.lowerLegs){
+      md.lowerLegs[0].rotation.x=Math.max(0,legSw);
+      md.lowerLegs[1].rotation.x=Math.max(0,-legSw);
+    }
+  }
   // Fly target: circle player + occasionally dive
   const dx=player.pos.x-d.pos.x,dz=player.pos.z-d.pos.z;
   const horiz=Math.hypot(dx,dz);
@@ -1270,13 +1488,14 @@ let shakeAmt=0;function shake(a){shakeAmt=Math.min(1.4,shakeAmt+a);}
 /* ============================================
    BATTLE ZONE SYSTEM
    ============================================ */
-let battleMode=false,battlePhase="prepare",battleTimer=300,battleZoneRadius=Math.min(WX,WZ)/2-2;
-let zoneHurtAccum=0,ruinHurtAccum=0,waterHurtAccum=0,zonePulseT=0,zoneRebuildTimer=0;
+let battleMode=false,battlePhase="prepare",battleTimer=300,battleZoneRadius=INNER_ZONE_R;
+let zoneHurtAccum=0,ruinHurtAccum=0,waterHurtAccum=0,outerZoneHurtAccum=0,zonePulseT=0,zoneRebuildTimer=0;
 const PREPARE_TIME=300,ATTACK_TIME=120;
 function formatTime(sec){const m=Math.floor(sec/60)|0,s=Math.floor(sec%60)|0;return m+":"+(s<10?"0":"")+s;}
 function updateBattleZone(dt){
-  if(!battleMode)return;zonePulseT+=dt;zoneRebuildTimer+=dt;
-  if(zoneRebuildTimer>1){zoneRebuildTimer=0;if(zoneMesh)zoneMesh.scale.setScalar(battleZoneRadius/(Math.min(WX,WZ)/2-2));}
+  if(!battleMode){zonePulseT+=dt;return;}
+  zonePulseT+=dt;zoneRebuildTimer+=dt;
+  if(zoneRebuildTimer>1){zoneRebuildTimer=0;if(zoneMesh)zoneMesh.scale.setScalar(battleZoneRadius/INNER_ZONE_R);}
   battleTimer-=dt;
   if(battlePhase==="prepare"){
     $("phaseTimerBox").className="prepare";$("phaseLabel").textContent="PREPARE PHASE";$("phaseTimerVal").textContent=formatTime(Math.max(0,battleTimer));
@@ -1284,18 +1503,39 @@ function updateBattleZone(dt){
   } else if(battlePhase==="attack"){
     $("phaseTimerBox").className="attack";$("phaseLabel").textContent="ATTACK PHASE";$("phaseTimerVal").textContent=formatTime(Math.max(0,battleTimer));
     const shrinkPct=1-Math.max(0,battleTimer/ATTACK_TIME);
-    battleZoneRadius=Math.max(4,(Math.min(WX,WZ)/2-2)*(1-shrinkPct*0.85));
+    battleZoneRadius=Math.max(4,INNER_ZONE_R*(1-shrinkPct*0.85));
     if(zoneMesh){zoneMesh.geometry.dispose();zoneMesh.geometry=new THREE.CylinderGeometry(battleZoneRadius,battleZoneRadius,60,64,1,true);}
     if(battleTimer<=0){battlePhase="ended";battleVictory();}
   }
   const distFromCenter=Math.hypot(player.pos.x-CXc,player.pos.z-CZc);
+  // Inner zone check (battle zone shrinks)
   player.outOfZone=(distFromCenter>battleZoneRadius);
-  if(player.outOfZone){$("zoneWarn").style.opacity="1";$("zonehurt").style.opacity=(0.3+0.2*Math.sin(zonePulseT*4)).toString();zoneHurtAccum+=dt;while(zoneHurtAccum>=1){zoneHurtAccum-=1;hurtPlayer(2,0,0);SFX.zoneHurt();}}
-  else{$("zoneWarn").style.opacity="0";$("zonehurt").style.opacity="0";zoneHurtAccum=0;}
-  const pInWater=isWater(Math.floor(player.pos.x),Math.floor(player.pos.y),Math.floor(player.pos.z));
-  if(pInWater&&battlePhase==="attack"){waterHurtAccum+=dt;while(waterHurtAccum>=1){waterHurtAccum-=1;hurtPlayer(1,0,0);}}else waterHurtAccum=0;
+  // Outer zone check (outer danger boundary)
+  const playerOutsideOuter=(distFromCenter>OUTER_ZONE_R);
+  // Show zone warning if outside inner battle zone during attack
+  if(player.outOfZone&&battlePhase==="attack"){
+    $("zoneWarn").style.opacity="1";
+    $("zonehurt").style.opacity=(0.3+0.2*Math.sin(zonePulseT*4)).toString();
+    zoneHurtAccum+=dt;
+    while(zoneHurtAccum>=1){zoneHurtAccum-=1;hurtPlayer(1,0,0);SFX.zoneHurt();}
+  } else {
+    $("zoneWarn").style.opacity="0";$("zonehurt").style.opacity="0";zoneHurtAccum=0;
+  }
+  // Outside OUTER boundary during attack: 1 HP/sec additional
+  if(playerOutsideOuter&&battlePhase==="attack"){
+    outerZoneHurtAccum+=dt;
+    while(outerZoneHurtAccum>=1){outerZoneHurtAccum-=1;hurtPlayer(1,0,0);SFX.zoneHurt();}
+  } else outerZoneHurtAccum=0;
+  // Ruin zone damage during attack: 1 HP/sec
   const pInRuin=isRuinZone(player.pos.x,player.pos.z);
   if(pInRuin&&battlePhase==="attack"){ruinHurtAccum+=dt;while(ruinHurtAccum>=1){ruinHurtAccum-=1;hurtPlayer(1,0,0);}}else ruinHurtAccum=0;
+}
+// Water HP drain: always 1 HP/sec regardless of phase
+function updateWaterDamage(dt){
+  const pInWater=isWater(Math.floor(player.pos.x),Math.floor(player.pos.y),Math.floor(player.pos.z))
+               ||isWater(Math.floor(player.pos.x),Math.floor(player.pos.y)+1,Math.floor(player.pos.z));
+  if(pInWater&&playing&&!dead){waterHurtAccum+=dt;while(waterHurtAccum>=1){waterHurtAccum-=1;hurtPlayer(1,0,0);}}
+  else waterHurtAccum=0;
 }
 function battleVictory(){if(!battleMode||battlePhase==="ended")return;battlePhase="ended";const alive=enemies.filter(e=>e.isPvpBot&&e.isEnemy&&!e.dead).length;if(alive===0){banner("VICTORY!","ALL ENEMIES ELIMINATED","#4adc6f");SFX.heal();}else{banner("TIME'S UP","ZONE COLLAPSED","#e2483d");}}
 
@@ -1317,10 +1557,27 @@ function buildMinimapTerrain(){
 function drawMinimap(){
   if(!minimapTerrainReady){buildMinimapTerrain();minimapTerrainReady=true;}
   mmCtx.putImageData(mmTerrain,0,0);
-  if(battleMode){
-    const maxR=Math.min(WX,WZ)/2-2;const safeR=(battleZoneRadius/maxR)*(MM_SIZE/2-4);const cx=MM_SIZE/2,cz=MM_SIZE/2;
-    mmCtx.beginPath();mmCtx.arc(cx,cz,safeR,0,Math.PI*2);mmCtx.strokeStyle=battlePhase==="prepare"?"rgba(74,220,111,0.9)":"rgba(74,220,111,0.7)";mmCtx.lineWidth=2;mmCtx.stroke();
-    mmCtx.save();mmCtx.globalAlpha=0.2+0.08*Math.sin(zonePulseT*3);mmCtx.fillStyle="#e2483d";mmCtx.beginPath();mmCtx.rect(0,0,MM_SIZE,MM_SIZE);mmCtx.arc(cx,cz,safeR,0,Math.PI*2,true);mmCtx.fill("evenodd");mmCtx.restore();
+  // Always draw zone rings on minimap
+  {
+    const cx=MM_SIZE/2,cz=MM_SIZE/2;
+    const worldToMM=(r)=>(r/Math.max(WX,WZ))*MM_SIZE;
+    // Outer zone ring (red)
+    const outerR=worldToMM(OUTER_ZONE_R);
+    mmCtx.beginPath();mmCtx.arc(cx,cz,outerR,0,Math.PI*2);
+    mmCtx.strokeStyle="rgba(226,72,61,0.7)";mmCtx.lineWidth=2;mmCtx.stroke();
+    // Separator ring (cyan)
+    const sepR=worldToMM(SEPARATOR_R);
+    mmCtx.beginPath();mmCtx.arc(cx,cz,sepR,0,Math.PI*2);
+    mmCtx.strokeStyle="rgba(53,224,212,0.85)";mmCtx.lineWidth=1.5;mmCtx.stroke();
+    // Inner/battle zone ring (green)
+    const safeR=worldToMM(battleZoneRadius);
+    mmCtx.beginPath();mmCtx.arc(cx,cz,safeR,0,Math.PI*2);
+    mmCtx.strokeStyle=battlePhase==="prepare"?"rgba(74,220,111,0.9)":"rgba(74,220,111,0.7)";mmCtx.lineWidth=2;mmCtx.stroke();
+    if(battleMode){
+      mmCtx.save();mmCtx.globalAlpha=0.18+0.07*Math.sin(zonePulseT*3);mmCtx.fillStyle="#e2483d";
+      mmCtx.beginPath();mmCtx.rect(0,0,MM_SIZE,MM_SIZE);mmCtx.arc(cx,cz,safeR,0,Math.PI*2,true);mmCtx.fill("evenodd");
+      mmCtx.restore();
+    }
   }
   // Player
   const ppx=(player.pos.x/WX)*MM_SIZE,ppz=(player.pos.z/WZ)*MM_SIZE;
@@ -1437,12 +1694,17 @@ function newGame(){
   minimapTerrainReady=false;
   const mode=window.selectedGameMode||"wave";
   battleMode=(mode==="pvp"||mode==="party");
-  battlePhase="prepare";battleTimer=PREPARE_TIME;battleZoneRadius=Math.min(WX,WZ)/2-2;
-  zoneHurtAccum=0;ruinHurtAccum=0;waterHurtAccum=0;pvpBotsAlive=0;allyBotsAlive=0;
+  battlePhase="prepare";battleTimer=PREPARE_TIME;battleZoneRadius=INNER_ZONE_R;
+  zoneHurtAccum=0;ruinHurtAccum=0;waterHurtAccum=0;outerZoneHurtAccum=0;pvpBotsAlive=0;allyBotsAlive=0;
   wave=1;phase="build";waveTimer=20;spawnQueue=[];
   dead=false;craftOpen=false;$("craftScreen").classList.remove("open");
   if(battleMode){$("battlePhaseBar").classList.add("show");$("timerplate").style.display="none";$("waveplate").style.display="none";rebuildZoneMeshes();spawnPvpBots();banner("PREPARE PHASE","5 MINUTES — GATHER & BUILD","#4adc6f");}
-  else{$("battlePhaseBar").classList.remove("show");$("timerplate").style.display="";$("waveplate").style.display="";$("timerKey").textContent="BUILD TIME";banner("BUILD","20s BEFORE WAVE 1","#ffaa44");}
+  else{
+    $("battlePhaseBar").classList.remove("show");$("timerplate").style.display="";$("waveplate").style.display="";
+    $("timerKey").textContent="BUILD TIME";banner("BUILD","20s BEFORE WAVE 1","#ffaa44");
+    // Always show zone rings in wave mode too
+    rebuildZoneMeshes();
+  }
   drawHotbar();updateHUD();running=true;playing=true;
   $("startscreen").classList.add("hide");$("deadscreen").classList.add("hide");$("pausescreen").classList.add("hide");
   if(!isTouch)canvas.requestPointerLock();A();
@@ -1461,14 +1723,24 @@ genWorld();buildAll();resetPlayer();spawnAnimals();spawnDogs();drawHotbar();upda
 player.pos.set(CXc+0.5,tH(CXc|0,CZc|0)+2,CZc+0.5);
 let waterT=0;
 function animateWater(dt){waterT+=dt;waterSurfaces.children.forEach((w,i)=>{w.position.y=7.93+Math.sin(waterT*1.2+i*0.7)*0.03;w.material.opacity=0.62+Math.sin(waterT*0.8+i*0.4)*0.08;});}
-function animateZoneRing(dt){if(!zoneMesh)return;zoneMesh.material.opacity=0.14+0.08*Math.sin(zonePulseT*2.2);if(zoneOutMesh)zoneOutMesh.material.opacity=0.08+0.04*Math.sin(zonePulseT*1.5);}
+function animateZoneRing(dt){
+  if(zoneMesh)zoneMesh.material.opacity=0.14+0.08*Math.sin(zonePulseT*2.2);
+  if(zoneOutMesh)zoneOutMesh.material.opacity=0.09+0.05*Math.sin(zonePulseT*1.5);
+  if(separatorMesh){
+    // Pulse the separator ring cyan glow
+    const pulse=0.18+0.1*Math.sin(zonePulseT*3.1);
+    separatorMesh.children.forEach((c,i)=>{
+      if(c.material)c.material.opacity=i===0?(pulse*0.4):(pulse);
+    });
+  }
+}
 // Dragon spawn check: dragon spawns in out-zone after enough waves or in battle mode
 let dragonSpawnTimer=180;
 const clock=new THREE.Clock();let menuAngle=0;
 function frame(){
   requestAnimationFrame(frame);let dt=Math.min(0.05,clock.getDelta());time+=dt;
   if(running&&!dead){
-    const sp=updatePlayer(dt);mineTick(dt);updateEnemies(dt);updateProjs(dt);updateWave(dt);updateAnimals(dt);updateDogs(dt);updateFishing(dt);updateBattleZone(dt);updateDragon(dt);animateZoneRing(dt);
+    const sp=updatePlayer(dt);mineTick(dt);updateEnemies(dt);updateProjs(dt);updateWave(dt);updateAnimals(dt);updateDogs(dt);updateFishing(dt);updateBattleZone(dt);updateWaterDamage(dt);updateDragon(dt);animateZoneRing(dt);
     // Spawn dragon periodically in out-zone or battle zone
     dragonSpawnTimer-=dt;
     if(dragonSpawnTimer<=0&&!dragon){dragonSpawnTimer=120+Math.random()*60;spawnDragon();}
